@@ -3,62 +3,128 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Run-by-Run</title>
+<title>Run By Run</title>
 
 <style>
-* {
-  box-sizing: border-box;
-  touch-action: none;
+*{
+  box-sizing:border-box;
+  margin:0;
+  padding:0;
+  user-select:none;
+  -webkit-user-select:none;
 }
 
-body {
-  margin: 0;
-  background: #222;
-  font-family: Arial, sans-serif;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
+body{
+  background:#111;
+  color:white;
+  font-family:Arial,sans-serif;
+  text-align:center;
+  overflow:hidden;
 }
 
-#game {
-  background: #87ceeb;
-  border: 3px solid white;
-  width: 95%;
-  max-width: 800px;
+h1{
+  margin:8px 0;
+  font-size:25px;
 }
 
-.controls {
-  margin-top: 15px;
-  display: flex;
-  gap: 12px;
+#game{
+  width:95%;
+  max-width:900px;
+  height:auto;
+  border:3px solid white;
+  border-radius:12px;
+  background:#87CEEB;
+  display:block;
+  margin:auto;
+  touch-action:none;
 }
 
-button {
-  width: 75px;
-  height: 55px;
-  border: none;
-  border-radius: 12px;
-  background: white;
-  font-size: 25px;
-  font-weight: bold;
+#ui{
+  width:95%;
+  max-width:900px;
+  margin:8px auto;
+  display:flex;
+  justify-content:space-around;
+  font-size:18px;
+  font-weight:bold;
 }
 
-#jump {
-  width: 100px;
+#controls{
+  width:95%;
+  max-width:500px;
+  margin:10px auto;
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+}
+
+button{
+  flex:1;
+  padding:15px;
+  font-size:25px;
+  font-weight:bold;
+  border:none;
+  border-radius:15px;
+  background:#222;
+  color:white;
+  box-shadow:0 4px 0 #000;
+  touch-action:none;
+}
+
+button:active{
+  transform:translateY(4px);
+  box-shadow:none;
+}
+
+#message{
+  position:fixed;
+  left:50%;
+  top:45%;
+  transform:translate(-50%,-50%);
+  background:rgba(0,0,0,.88);
+  padding:25px;
+  border-radius:18px;
+  display:none;
+  z-index:10;
+}
+
+#message h2{
+  font-size:30px;
+  margin-bottom:10px;
+}
+
+#restart{
+  margin-top:15px;
+  background:#e63946;
+  padding:12px 25px;
 }
 </style>
 </head>
 
 <body>
 
-<canvas id="game" width="800" height="400"></canvas>
+<h1>🏃 RUN BY RUN</h1>
 
-<div class="controls">
+<div id="ui">
+  <div>🪙 <span id="coins">0</span></div>
+  <div>🏆 <span id="score">0</span></div>
+  <div>❤️ <span id="lives">3</span></div>
+  <div>⚡ <span id="speed">1</span></div>
+</div>
+
+<canvas id="game" width="900" height="450"></canvas>
+
+<div id="controls">
   <button id="left">⬅️</button>
   <button id="jump">⬆️</button>
   <button id="right">➡️</button>
+</div>
+
+<div id="message">
+  <h2>💀 GAME OVER</h2>
+  <p>Score: <span id="finalScore">0</span></p>
+  <p>Coins: <span id="finalCoins">0</span></p>
+  <button id="restart">🔄 RESTART</button>
 </div>
 
 <script>
@@ -66,134 +132,113 @@ button {
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-let player;
-let enemy;
-let coins;
-let score;
-let lives;
-let gameOver;
+let score = 0;
+let coinsCollected = 0;
+let lives = 3;
+let gameSpeed = 5;
+let gameOver = false;
+
+let highScore = Number(localStorage.getItem("runByRunHighScore")) || 0;
+
+let keys = {
+  left:false,
+  right:false
+};
+
+let player = {
+  x:120,
+  y:340,
+  width:45,
+  height:60,
+  velocityY:0,
+  jumping:false,
+  speed:7
+};
 
 const gravity = 0.7;
-const ground = 350;
+const ground = 400;
 
-function resetGame() {
 
-  player = {
-    x: 100,
-    y: 300,
-    width: 40,
-    height: 50,
-    velocityY: 0,
-    speed: 5,
-    jumping: false
-  };
+/* =========================
+   SOUND
+========================= */
 
-  enemy = {
-    x: 650,
-    y: 310,
-    width: 40,
-    height: 40,
-    speed: 3
-  };
+let audioCtx;
 
-  coins = [
-    {x: 300, y: 300, r: 10, collected: false},
-    {x: 430, y: 250, r: 10, collected: false},
-    {x: 560, y: 300, r: 10, collected: false},
-    {x: 700, y: 220, r: 10, collected: false}
-  ];
+function sound(freq,duration,type="sine"){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
 
-  score = 0;
-  lives = 3;
-  gameOver = false;
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+
+    osc.type = type;
+    osc.frequency.value = freq;
+
+    gain.gain.setValueAtTime(.08,audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(
+      .001,
+      audioCtx.currentTime + duration
+    );
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  }catch(e){}
 }
 
-resetGame();
 
-function drawPlayer() {
+/* =========================
+   COINS
+========================= */
 
-  ctx.fillStyle = "#ff3333";
-  ctx.fillRect(
-    player.x,
-    player.y,
-    player.width,
-    player.height
-  );
-}
+let coins = [];
 
-function drawEnemy() {
-
-  ctx.fillStyle = "#111";
-
-  ctx.fillRect(
-    enemy.x,
-    enemy.y,
-    enemy.width,
-    enemy.height
-  );
-
-  ctx.fillStyle = "red";
-  ctx.fillRect(enemy.x + 8, enemy.y + 10, 7, 7);
-  ctx.fillRect(enemy.x + 25, enemy.y + 10, 7, 7);
-}
-
-function drawCoins() {
-
-  coins.forEach(coin => {
-
-    if (!coin.collected) {
-
-      ctx.beginPath();
-
-      ctx.fillStyle = "gold";
-
-      ctx.arc(
-        coin.x,
-        coin.y,
-        coin.r,
-        0,
-        Math.PI * 2
-      );
-
-      ctx.fill();
-
-      ctx.strokeStyle = "#d99b00";
-      ctx.stroke();
-    }
+function createCoin(){
+  coins.push({
+    x:950,
+    y:260 + Math.random()*100,
+    r:12,
+    rotation:0
   });
 }
 
-function drawGround() {
 
-  ctx.fillStyle = "#333";
+/* =========================
+   ENEMIES
+========================= */
 
-  ctx.fillRect(
-    0,
-    ground,
-    canvas.width,
-    50
-  );
+let enemies = [];
+
+function createEnemy(){
+  enemies.push({
+    x:950,
+    y:350,
+    width:45,
+    height:50,
+    speed:gameSpeed + Math.random()*2
+  });
 }
 
-function drawHUD() {
 
-  ctx.fillStyle = "#111";
-  ctx.font = "20px Arial";
+/* =========================
+   CLOUDS
+========================= */
 
-  ctx.fillText(
-    "Score: " + score,
-    20,
-    30
-  );
+let clouds = [
+  {x:100,y:70,size:1},
+  {x:400,y:100,size:1.3},
+  {x:700,y:60,size:.8}
+];
 
-  ctx.fillText(
-    "❤️ " + lives,
-    700,
-    30
-  );
-}
 
-function collision(a, b) {
+/* =========================
+   COLLISION
+========================= */
+
+function collision(a,b){
 
   return (
     a.x < b.x + b.width &&
@@ -201,214 +246,555 @@ function collision(a, b) {
     a.y < b.y + b.height &&
     a.y + a.height > b.y
   );
+
 }
 
-function update() {
 
-  if (gameOver) return;
+/* =========================
+   JUMP
+========================= */
 
-  // Player movement
-  player.x += player.speed;
+function jump(){
 
-  // Gravity
+  if(!player.jumping && !gameOver){
+
+    player.velocityY = -14;
+    player.jumping = true;
+
+    sound(500,.12,"square");
+  }
+
+}
+
+
+/* =========================
+   DRAW BACKGROUND
+========================= */
+
+function drawBackground(){
+
+  // Sky
+  let gradient = ctx.createLinearGradient(0,0,0,450);
+
+  gradient.addColorStop(0,"#55bfff");
+  gradient.addColorStop(1,"#d9f5ff");
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0,0,900,450);
+
+
+  // Sun
+  ctx.fillStyle="#FFD93D";
+  ctx.beginPath();
+  ctx.arc(760,75,40,0,Math.PI*2);
+  ctx.fill();
+
+
+  // Clouds
+  ctx.fillStyle="white";
+
+  clouds.forEach(c=>{
+
+    ctx.beginPath();
+
+    ctx.arc(c.x,c.y,22*c.size,0,Math.PI*2);
+    ctx.arc(c.x+25*c.size,c.y-10*c.size,28*c.size,0,Math.PI*2);
+    ctx.arc(c.x+55*c.size,c.y,22*c.size,0,Math.PI*2);
+
+    ctx.fill();
+
+    c.x -= gameSpeed*.15;
+
+    if(c.x < -100){
+      c.x = 950;
+    }
+
+  });
+
+
+  // Ground
+  ctx.fillStyle="#55a630";
+  ctx.fillRect(0,400,900,50);
+
+  // Road
+  ctx.fillStyle="#333";
+  ctx.fillRect(0,420,900,30);
+
+  // Road lines
+  ctx.fillStyle="#fff";
+
+  for(let x=0;x<900;x+=100){
+    ctx.fillRect(x,433,55,4);
+  }
+
+}
+
+
+/* =========================
+   DRAW PLAYER
+========================= */
+
+function drawPlayer(){
+
+  // Body
+  ctx.fillStyle="#e63946";
+  ctx.fillRect(
+    player.x,
+    player.y,
+    player.width,
+    player.height
+  );
+
+  // Head
+  ctx.fillStyle="#ffcc99";
+  ctx.beginPath();
+
+  ctx.arc(
+    player.x+22,
+    player.y-8,
+    18,
+    0,
+    Math.PI*2
+  );
+
+  ctx.fill();
+
+  // Eye
+  ctx.fillStyle="black";
+  ctx.fillRect(
+    player.x+28,
+    player.y-12,
+    4,
+    4
+  );
+
+  // Legs
+  ctx.fillStyle="#222";
+
+  ctx.fillRect(
+    player.x+5,
+    player.y+player.height,
+    10,
+    15
+  );
+
+  ctx.fillRect(
+    player.x+28,
+    player.y+player.height,
+    10,
+    15
+  );
+
+}
+
+
+/* =========================
+   DRAW COIN
+========================= */
+
+function drawCoin(c){
+
+  c.rotation += .1;
+
+  ctx.save();
+
+  ctx.translate(c.x,c.y);
+  ctx.scale(Math.abs(Math.cos(c.rotation)),1);
+
+  ctx.fillStyle="#FFD700";
+
+  ctx.beginPath();
+  ctx.arc(0,0,c.r,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.strokeStyle="#fff";
+  ctx.lineWidth=2;
+  ctx.stroke();
+
+  ctx.fillStyle="#a66a00";
+  ctx.font="bold 14px Arial";
+  ctx.textAlign="center";
+  ctx.fillText("$",0,5);
+
+  ctx.restore();
+
+}
+
+
+/* =========================
+   DRAW ENEMY
+========================= */
+
+function drawEnemy(e){
+
+  // Body
+  ctx.fillStyle="#171717";
+
+  ctx.fillRect(
+    e.x,
+    e.y,
+    e.width,
+    e.height
+  );
+
+  // Eyes
+  ctx.fillStyle="red";
+
+  ctx.fillRect(
+    e.x+8,
+    e.y+10,
+    8,
+    8
+  );
+
+  ctx.fillRect(
+    e.x+29,
+    e.y+10,
+    8,
+    8
+  );
+
+  // Mouth
+  ctx.fillStyle="white";
+  ctx.fillRect(
+    e.x+10,
+    e.y+35,
+    25,
+    5
+  );
+
+}
+
+
+/* =========================
+   UPDATE
+========================= */
+
+function update(){
+
+  if(gameOver) return;
+
+
+  /* PLAYER MOVEMENT */
+
+  if(keys.left){
+    player.x -= player.speed;
+  }
+
+  if(keys.right){
+    player.x += player.speed;
+  }
+
+  // Keep player inside screen
+  if(player.x < 0){
+    player.x = 0;
+  }
+
+  if(player.x > 855){
+    player.x = 855;
+  }
+
+
+  /* GRAVITY */
+
   player.velocityY += gravity;
   player.y += player.velocityY;
 
-  // Ground
-  if (player.y + player.height >= ground) {
 
-    player.y = ground - player.height;
+  if(player.y >= 340){
 
+    player.y = 340;
     player.velocityY = 0;
     player.jumping = false;
+
   }
 
-  // Enemy movement
-  enemy.x -= enemy.speed;
 
-  if (enemy.x < -50) {
+  /* COINS */
 
-    enemy.x = canvas.width + 100;
+  coins.forEach(c=>{
 
-    enemy.speed += 0.2;
-  }
+    c.x -= gameSpeed;
 
-  // Enemy collision
-  if (collision(player, enemy)) {
+    let coinBox = {
+      x:c.x-c.r,
+      y:c.y-c.r,
+      width:c.r*2,
+      height:c.r*2
+    };
 
-    lives--;
+    if(
+      collision(player,coinBox)
+    ){
 
-    player.x = 100;
-    enemy.x = canvas.width + 150;
+      coinsCollected++;
+      score += 10;
 
-    if (lives <= 0) {
+      sound(800,.15,"sine");
 
-      gameOver = true;
+      c.collected = true;
     }
-  }
 
-  // Coin collision
-  coins.forEach(coin => {
-
-    if (!coin.collected) {
-
-      let dx =
-        player.x + player.width / 2 - coin.x;
-
-      let dy =
-        player.y + player.height / 2 - coin.y;
-
-      let distance =
-        Math.sqrt(dx * dx + dy * dy);
-
-      if (distance < 35) {
-
-        coin.collected = true;
-
-        score += 10;
-      }
-    }
   });
 
-  // New coins
-  if (coins.every(c => c.collected)) {
+  coins = coins.filter(c=>!c.collected && c.x>-50);
 
-    coins = [
-      {x: 250, y: 280, r: 10, collected: false},
-      {x: 400, y: 220, r: 10, collected: false},
-      {x: 550, y: 280, r: 10, collected: false},
-      {x: 700, y: 200, r: 10, collected: false}
-    ];
+
+  /* ENEMIES */
+
+  enemies.forEach(e=>{
+
+    e.x -= e.speed;
+
+
+    if(
+      collision(player,e)
+    ){
+
+      lives--;
+
+      sound(100,.25,"sawtooth");
+
+      player.x = 120;
+
+      e.x = 1000;
+
+      if(lives <= 0){
+        endGame();
+      }
+
+    }
+
+  });
+
+  enemies = enemies.filter(e=>e.x>-100);
+
+
+  /* SCORE */
+
+  score++;
+
+  
+  /* SPEED */
+
+  gameSpeed = 5 + Math.floor(score/500);
+
+  document.getElementById("speed").textContent =
+    gameSpeed - 4;
+
+
+  /* SPAWN COINS */
+
+  if(Math.random() < .025){
+    createCoin();
   }
 
-  // Screen boundary
-  if (player.x < 0)
-    player.x = 0;
 
-  if (player.x > canvas.width - player.width)
-    player.x = canvas.width - player.width;
+  /* SPAWN ENEMIES */
+
+  if(Math.random() < .012){
+    createEnemy();
+  }
+
+
+  /* UI */
+
+  document.getElementById("score").textContent =
+    score;
+
+  document.getElementById("coins").textContent =
+    coinsCollected;
+
+  document.getElementById("lives").textContent =
+    lives;
+
 }
 
-function draw() {
 
-  ctx.clearRect(
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  );
+/* =========================
+   GAME OVER
+========================= */
 
-  drawGround();
-  drawCoins();
+function endGame(){
+
+  gameOver = true;
+
+  if(score > highScore){
+
+    highScore = score;
+
+    localStorage.setItem(
+      "runByRunHighScore",
+      highScore
+    );
+
+  }
+
+  document.getElementById("finalScore").textContent =
+    score;
+
+  document.getElementById("finalCoins").textContent =
+    coinsCollected;
+
+  document.getElementById("message").style.display =
+    "block";
+
+}
+
+
+/* =========================
+   RESTART
+========================= */
+
+function restartGame(){
+
+  score = 0;
+  coinsCollected = 0;
+  lives = 3;
+  gameSpeed = 5;
+  gameOver = false;
+
+  player.x = 120;
+  player.y = 340;
+  player.velocityY = 0;
+  player.jumping = false;
+
+  coins = [];
+  enemies = [];
+
+  document.getElementById("message").style.display =
+    "none";
+
+  sound(600,.1);
+
+}
+
+
+/* =========================
+   GAME LOOP
+========================= */
+
+function gameLoop(){
+
+  drawBackground();
+
+  coins.forEach(drawCoin);
+  enemies.forEach(drawEnemy);
+
   drawPlayer();
-  drawEnemy();
-  drawHUD();
-
-  if (gameOver) {
-
-    ctx.fillStyle = "rgba(0,0,0,0.65)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.fillStyle = "white";
-    ctx.font = "45px Arial";
-    ctx.textAlign = "center";
-
-    ctx.fillText(
-      "GAME OVER",
-      canvas.width / 2,
-      170
-    );
-
-    ctx.font = "25px Arial";
-
-    ctx.fillText(
-      "Score: " + score,
-      canvas.width / 2,
-      220
-    );
-
-    ctx.fillText(
-      "Tap / Space to Restart",
-      canvas.width / 2,
-      270
-    );
-
-    ctx.textAlign = "left";
-  }
-}
-
-function gameLoop() {
 
   update();
-  draw();
 
   requestAnimationFrame(gameLoop);
+
 }
 
 gameLoop();
 
-function jump() {
 
-  if (!player.jumping && !gameOver) {
+/* =========================
+   KEYBOARD
+========================= */
 
-    player.velocityY = -13;
-    player.jumping = true;
+document.addEventListener("keydown",e=>{
+
+  if(e.key==="ArrowLeft"){
+    keys.left=true;
   }
 
-  else if (gameOver) {
-
-    resetGame();
-  }
-}
-
-// Keyboard
-document.addEventListener("keydown", e => {
-
-  if (e.key === "ArrowLeft") {
-    player.x -= 25;
+  if(e.key==="ArrowRight"){
+    keys.right=true;
   }
 
-  if (e.key === "ArrowRight") {
-    player.x += 25;
-  }
-
-  if (e.key === " " || e.key === "ArrowUp") {
+  if(
+    e.key==="ArrowUp" ||
+    e.key===" "
+  ){
     jump();
   }
+
 });
 
-// Mobile buttons
-document.getElementById("left")
-.addEventListener("touchstart", e => {
+document.addEventListener("keyup",e=>{
 
-  e.preventDefault();
+  if(e.key==="ArrowLeft"){
+    keys.left=false;
+  }
 
-  if (!gameOver)
-    player.x -= 35;
+  if(e.key==="ArrowRight"){
+    keys.right=false;
+  }
+
 });
 
-document.getElementById("right")
-.addEventListener("touchstart", e => {
 
-  e.preventDefault();
+/* =========================
+   MOBILE BUTTONS
+========================= */
 
-  if (!gameOver)
-    player.x += 35;
-});
+function holdButton(button,actionDown,actionUp){
 
-document.getElementById("jump")
-.addEventListener("touchstart", e => {
+  button.addEventListener("touchstart",e=>{
+    e.preventDefault();
+    actionDown();
+  });
 
-  e.preventDefault();
+  button.addEventListener("touchend",e=>{
+    e.preventDefault();
+    actionUp();
+  });
 
-  jump();
-});
+  button.addEventListener("mousedown",e=>{
+    e.preventDefault();
+    actionDown();
+  });
 
-// Tap game to restart
-canvas.addEventListener("touchstart", e => {
+  button.addEventListener("mouseup",e=>{
+    e.preventDefault();
+    actionUp();
+  });
 
-  if (gameOver)
-    resetGame();
+}
+
+holdButton(
+  document.getElementById("left"),
+  ()=>keys.left=true,
+  ()=>keys.left=false
+);
+
+holdButton(
+  document.getElementById("right"),
+  ()=>keys.right=true,
+  ()=>keys.right=false
+);
+
+
+document.getElementById("jump").addEventListener(
+  "touchstart",
+  e=>{
+    e.preventDefault();
+    jump();
+  }
+);
+
+document.getElementById("jump").addEventListener(
+  "click",
+  jump
+);
+
+
+document.getElementById("restart").addEventListener(
+  "click",
+  restartGame
+);
+
+
+/* Tap screen to jump */
+
+canvas.addEventListener("touchstart",e=>{
+  if(!gameOver){
+    jump();
+  }
 });
 
 </script>
